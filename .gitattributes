@@ -1,0 +1,4 @@
+/RUGE/datasets/fb15k/fb15k_triples.train filter=lfs diff=lfs merge=lfs -text
+/RUGE/datasets/yago37/yago37_triples.train filter=lfs diff=lfs merge=lfs -text
+/datasets/fb15k/fb15k_triples.train filter=lfs diff=lfs merge=lfs -text
+/datasets/yago37/yago37_triples.train filter=lfs diff=lfs merge=lfs -text
