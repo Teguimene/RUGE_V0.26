@@ -242,11 +242,10 @@ public class GroundAllRules {
 	}
 	
 	public static void main(String[] args) throws Exception {
-		// TODO Auto-generated method stub
-		String fnRelationIDMap = "datasets\\fb15k\\relationid.txt";
-		String fnRuleType = "datasets\\fb15k\\fb15k_rule";
-		String fnTrainingTriples = "datasets\\fb15k\\train.txt";
-        String fnOutput = "datasets\\fb15k\\groundings.txt";
+		String fnRelationIDMap = args.length > 0 ? args[0] : "datasets\\fb15k\\relationid.txt";
+		String fnRuleType = args.length > 1 ? args[1] : "datasets\\fb15k\\fb15k_rule";
+		String fnTrainingTriples = args.length > 2 ? args[2] : "datasets\\fb15k\\train.txt";
+        String fnOutput = args.length > 3 ? args[3] : "datasets\\fb15k\\groundings.txt";
 		
         long startTime = System.currentTimeMillis();
         GroundAllRules generator = new GroundAllRules();
