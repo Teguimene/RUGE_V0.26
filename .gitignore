@@ -1,9 +1,23 @@
+# Large local datasets; provide these separately as Kaggle input data.
 /datasets/ami_plus.jar
-/datasets/yago37/*.txt
+#/datasets/fb15k/
+#/datasets/yago37/
+
+# Compiled Java output.
+*.class
 /RUGE/bin/
 /RUGE/RUGE.jar
-/MatrixE.real.best
-/MatrixE.imag.best
-/MatrixR.real.best
-/MatrixR.imag.best
-/result.log
+/RUGE_RotatE/bin/
+/RUGE_RotatE/RUGE_RotatE.jar
+
+# Generated embeddings and training logs, wherever the run was launched.
+**/MatrixE.real.best
+**/MatrixE.imag.best
+**/MatrixR.real.best
+**/MatrixR.imag.best
+**/MatrixR.phase.best
+**/result.log
+
+# Local operating-system files.
+.DS_Store
+Thumbs.db
