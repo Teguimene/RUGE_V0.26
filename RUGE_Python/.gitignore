@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+ruge_python_best.pt
+MatrixE.real.best
+MatrixE.imag.best
+MatrixR.real.best
+MatrixR.imag.best
+MatrixR.phase.best
+result.log
