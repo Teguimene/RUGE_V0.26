@@ -1,7 +1,4 @@
-# Large local datasets; provide these separately as Kaggle input data.
-/datasets/ami_plus.jar
-#/datasets/fb15k/
-#/datasets/yago37/
+# Dataset files remain tracked for runs from a repository clone (including Kaggle).
 
 # Compiled Java output.
 *.class
