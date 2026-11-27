@@ -87,7 +87,12 @@ def main(argv: list[str] | None = None) -> int:
             )
         load_java_matrices(model, args.matrix_dir)
 
-    metrics = filtered_ranking_metrics(model, testing, known)
+    metrics = filtered_ranking_metrics(
+        model,
+        testing,
+        known,
+        progress_description="Test evaluation",
+    )
     print(
         f"Filtered test: MRR={metrics.mrr:.6f}, "
         f"Hits@10={metrics.hits_at_10:.6f}, "

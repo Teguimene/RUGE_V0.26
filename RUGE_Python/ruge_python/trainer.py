@@ -4,6 +4,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 from torch.autograd import Function
+from tqdm.auto import tqdm
 
 from .data import GroundRule
 from .io import save_checkpoint, save_java_matrices
@@ -295,6 +296,7 @@ class RUGETrainer:
             self.validation,
             self.known_triples,
             self.validation_limit,
+            progress_description="Validation",
         )
 
     def fit(self) -> RankingMetrics:
@@ -310,74 +312,91 @@ class RUGETrainer:
             self.model, self.accumulators, 0, best_mrr, checkpoint_path
         )
 
+        batches_per_epoch = min(self.num_minibatches, len(self.training))
+        total_batches = self.num_iterations * batches_per_epoch
         with log_path.open("w", encoding="utf-8") as log:
             log.write(
                 f"Initial validation: MRR={initial.mrr}\t"
                 f"Hits@10={initial.hits_at_10}\n"
             )
             log.flush()
-            print(
+            tqdm.write(
                 f"Initial validation: MRR={initial.mrr:.6f}, "
                 f"Hits@10={initial.hits_at_10:.6f}"
             )
 
-            for epoch in range(1, self.num_iterations + 1):
-                train_order = torch.randperm(
-                    len(self.training), generator=self.generator
-                )
-                rule_order = torch.randperm(
-                    len(self.rules), generator=self.generator
-                )
-                epoch_loss = 0.0
-
-                for batch_id in range(self.num_minibatches):
-                    train_indices = train_order[batch_id::self.num_minibatches]
-                    if train_indices.numel() == 0:
-                        continue
-
-                    positives = self.training[train_indices]
-                    triples, labels = self._make_supervised_batch(positives)
-                    denominator = len(triples)
-                    loss = self._triple_loss(triples, labels, denominator)
-
-                    rule_indices = rule_order[batch_id::self.num_minibatches]
-                    rule_loss = self._rule_loss(rule_indices)
-                    if rule_loss is not None:
-                        loss = loss + rule_loss
-
-                    for parameter in self.parameters:
-                        parameter.grad = None
-                    loss.backward()
-                    self._update_parameters()
-                    epoch_loss += loss.detach().item()
-
-                if epoch % self.output_iter_skip == 0 or epoch == self.num_iterations:
-                    metrics = self._evaluate()
-                    print(
-                        f"Epoch {epoch}/{self.num_iterations}: "
-                        f"loss={epoch_loss:.6f}, MRR={metrics.mrr:.6f}, "
-                        f"Hits@10={metrics.hits_at_10:.6f}"
+            with tqdm(
+                total=total_batches,
+                desc="Training",
+                unit="batch",
+            ) as progress:
+                for epoch in range(1, self.num_iterations + 1):
+                    train_order = torch.randperm(
+                        len(self.training), generator=self.generator
                     )
-                    log.write(
-                        f"Epoch {epoch}: loss={epoch_loss}\tMRR={metrics.mrr}\t"
-                        f"Hits@10={metrics.hits_at_10}\n"
+                    rule_order = torch.randperm(
+                        len(self.rules), generator=self.generator
                     )
-                    if metrics.mrr > best_mrr:
-                        best_mrr = metrics.mrr
-                        best_metrics = metrics
-                        best_epoch = epoch
-                        save_java_matrices(self.model, self.output_dir)
-                        save_checkpoint(
-                            self.model,
-                            self.accumulators,
-                            epoch,
-                            best_mrr,
-                            checkpoint_path,
+                    epoch_loss = 0.0
+                    completed_batches = 0
+
+                    for batch_id in range(self.num_minibatches):
+                        train_indices = train_order[batch_id::self.num_minibatches]
+                        if train_indices.numel() == 0:
+                            continue
+
+                        positives = self.training[train_indices]
+                        triples, labels = self._make_supervised_batch(positives)
+                        denominator = len(triples)
+                        loss = self._triple_loss(triples, labels, denominator)
+
+                        rule_indices = rule_order[batch_id::self.num_minibatches]
+                        rule_loss = self._rule_loss(rule_indices)
+                        if rule_loss is not None:
+                            loss = loss + rule_loss
+
+                        for parameter in self.parameters:
+                            parameter.grad = None
+                        loss.backward()
+                        self._update_parameters()
+                        epoch_loss += loss.detach().item()
+                        completed_batches += 1
+                        progress.update(1)
+                        progress.set_postfix(
+                            epoch=f"{epoch}/{self.num_iterations}",
+                            loss=f"{epoch_loss / completed_batches:.6f}",
                         )
-                    log.write(
-                        f"Best epoch {best_epoch}: MRR={best_mrr}\t"
-                        f"Hits@10={best_metrics.hits_at_10}\n"
-                    )
-                    log.flush()
+
+                    if (
+                        epoch % self.output_iter_skip == 0
+                        or epoch == self.num_iterations
+                    ):
+                        metrics = self._evaluate()
+                        tqdm.write(
+                            f"Epoch {epoch}/{self.num_iterations}: "
+                            f"loss={epoch_loss:.6f}, MRR={metrics.mrr:.6f}, "
+                            f"Hits@10={metrics.hits_at_10:.6f}"
+                        )
+                        log.write(
+                            f"Epoch {epoch}: loss={epoch_loss}\tMRR={metrics.mrr}\t"
+                            f"Hits@10={metrics.hits_at_10}\n"
+                        )
+                        if metrics.mrr > best_mrr:
+                            best_mrr = metrics.mrr
+                            best_metrics = metrics
+                            best_epoch = epoch
+                            save_java_matrices(self.model, self.output_dir)
+                            save_checkpoint(
+                                self.model,
+                                self.accumulators,
+                                epoch,
+                                best_mrr,
+                                checkpoint_path,
+                            )
+                        log.write(
+                            f"Best epoch {best_epoch}: MRR={best_mrr}\t"
+                            f"Hits@10={best_metrics.hits_at_10}\n"
+                        )
+                        log.flush()
 
         return best_metrics

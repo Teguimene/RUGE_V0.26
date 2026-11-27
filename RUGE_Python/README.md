@@ -47,6 +47,10 @@ python -m ruge_python --model rotate \
 float64` est le défaut pour se rapprocher des calculs Java en double précision;
 `--precision float32` permet un entraînement GPU plus rapide.
 
+L'entraînement affiche une barre `tqdm` mise à jour à chaque mini-batch, et les
+évaluations de validation et de test affichent leur progression par triplet.
+Les barres indiquent le temps écoulé et une estimation du temps restant.
+
 Les matrices sont écrites dans le format texte de Java, avec les noms
 `MatrixE.real.best`, `MatrixE.imag.best`, et les matrices de relation propres à
 chaque modèle. Un checkpoint PyTorch est aussi enregistré sous

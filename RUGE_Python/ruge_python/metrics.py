@@ -2,6 +2,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 import torch
+from tqdm.auto import tqdm
 
 from .models import RUGEEmbeddingModel
 
@@ -19,6 +20,8 @@ def filtered_ranking_metrics(
     validation: torch.Tensor,
     known_triples: set[tuple[int, int, int]],
     maximum_triples: int | None = None,
+    *,
+    progress_description: str | None = None,
 ) -> RankingMetrics:
     if maximum_triples is not None:
         validation = validation[:maximum_triples]
@@ -39,7 +42,15 @@ def filtered_ranking_metrics(
 
     model.eval()
     with torch.no_grad():
-        for head, relation, tail in validation.tolist():
+        validation_triples = validation.tolist()
+        if progress_description is not None:
+            validation_triples = tqdm(
+                validation_triples,
+                total=len(validation_triples),
+                desc=progress_description,
+                unit="triple",
+            )
+        for head, relation, tail in validation_triples:
             target = torch.tensor(
                 [[head, relation, tail]], dtype=torch.long, device=model.device
             )
