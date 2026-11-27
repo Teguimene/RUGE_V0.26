@@ -93,6 +93,33 @@ class InverseExclusionMiningTests(unittest.TestCase):
                 [(4, 1, 3), (6, 1, 5), (8, 1, 7)],
             )
 
+    def test_can_limit_groundings_to_selected_relation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            relation_map = root / "relationid.txt"
+            relation_map.write_text(
+                "0\t<hasChild>\n1\t<wasBornIn>\n",
+                encoding="utf-8",
+            )
+            training = root / "train.txt"
+            training.write_text("0\t0\t1\n2\t1\t3\n", encoding="utf-8")
+            output = root / "has_child_groundings.txt"
+
+            generated, skipped = ground_inverse_exclusions(
+                relation_map,
+                training,
+                output,
+                relation_names=("<hasChild>",),
+                min_support=1,
+                min_confidence=0.6,
+            )
+
+            self.assertEqual((generated, skipped), (1, 0))
+            rules = load_groundings(output, num_entities=4, num_relations=2)
+            self.assertEqual(len(rules), 1)
+            self.assertEqual(rules[0].triples, ((0, 0, 1), (1, 0, 0)))
+            self.assertEqual(rules[0].target, (1, 0, 0))
+
 
 if __name__ == "__main__":
     unittest.main()

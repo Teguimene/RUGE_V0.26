@@ -122,19 +122,47 @@ def ground_inverse_exclusions(
     output_path: str | Path,
     *,
     known_positive_paths: tuple[str | Path, ...] = (),
+    relation_names: tuple[str, ...] | None = None,
     min_support: int = 20,
     min_confidence: float = 0.8,
 ) -> tuple[int, int]:
     """Write candidate negative groundings for retained inverse rules."""
+    results = analyze_inverse_exclusions(
+        relation_map_path,
+        training_path,
+        min_support=min_support,
+        min_confidence=min_confidence,
+    )
+    selected_relation_ids = None
+    if relation_names is not None:
+        relation_ids = _read_id_map(Path(relation_map_path))
+        unknown_relations = set(relation_names) - relation_ids.keys()
+        if unknown_relations:
+            raise ValueError(
+                "Unknown relation(s): " + ", ".join(sorted(unknown_relations))
+            )
+        selected_relation_ids = {
+            relation_ids[name] for name in relation_names
+        }
+        rejected_relations = [
+            result.relation
+            for result in results
+            if result.relation_id in selected_relation_ids and not result.retained
+        ]
+        if rejected_relations:
+            raise ValueError(
+                "Selected relation(s) did not meet the support/confidence "
+                "thresholds: " + ", ".join(sorted(rejected_relations))
+            )
+
     retained_confidences = {
         result.relation_id: result.confidence_smoothed
-        for result in analyze_inverse_exclusions(
-            relation_map_path,
-            training_path,
-            min_support=min_support,
-            min_confidence=min_confidence,
-        )
+        for result in results
         if result.retained
+        and (
+            selected_relation_ids is None
+            or result.relation_id in selected_relation_ids
+        )
     }
 
     input_paths = (relation_map_path, training_path, *known_positive_paths)
@@ -407,6 +435,12 @@ def main(argv: list[str] | None = None) -> int:
     ground_inverse.add_argument("--relation-map", required=True)
     ground_inverse.add_argument("--train", required=True)
     ground_inverse.add_argument("--known-positive", nargs="*", default=[])
+    ground_inverse.add_argument(
+        "--relation",
+        action="append",
+        dest="relations",
+        help="Limit grounding to this exact relation-map label; may be repeated",
+    )
     ground_inverse.add_argument("--output", required=True)
     ground_inverse.add_argument("--min-support", type=int, default=20)
     ground_inverse.add_argument("--min-confidence", type=float, default=0.8)
@@ -466,6 +500,9 @@ def main(argv: list[str] | None = None) -> int:
             args.train,
             args.output,
             known_positive_paths=tuple(args.known_positive),
+            relation_names=(
+                None if args.relations is None else tuple(args.relations)
+            ),
             min_support=args.min_support,
             min_confidence=args.min_confidence,
         )

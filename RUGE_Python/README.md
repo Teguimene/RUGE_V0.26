@@ -132,9 +132,13 @@ python -m ruge_python.preprocess ground-inverse \
   --relation-map datasets/yago37/relationid.txt \
   --train datasets/yago37/train.txt \
   --known-positive datasets/yago37/valid.txt datasets/yago37/test.txt \
+  --relation "<hasChild>" \
   --output datasets/yago37/inverse_exclusion_groundings.txt \
   --min-support 20 --min-confidence 0.8
 ```
+
+Répéter `--relation "<nom>"` pour limiter les groundings à plusieurs relations.
+Sans cette option, toutes les relations retenues par les seuils sont générées.
 
 Le fichier généré peut être fourni au trainer avec `--negative-rule`, en plus
 des règles positives passées à `-rule`. Il faut d'abord examiner le rapport et
