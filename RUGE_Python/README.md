@@ -122,23 +122,23 @@ seuils. La confiance lissée utilise `((support - violations) + 1) /
 (support + 2)`. Elle mesure la cohérence observée dans le train, pas la
 probabilité que les triplets absents soient réellement faux.
 
-Après vérification manuelle des candidats, les groundings négatifs peuvent être
-écrits séparément pour inspection. Les positifs connus fournis sont exclus des
+Pour l'expérience initiale, les groundings de toutes les relations qui passent
+les seuils sont écrits séparément. Les positifs connus fournis sont exclus des
 cibles négatives; la confiance, elle, est toujours calculée uniquement sur le
-train :
+train. Cela inclut notamment `hasGender`; `--relation` peut servir plus tard à
+limiter l'expérience à une sélection de relations :
 
 ```bash
 python -m ruge_python.preprocess ground-inverse \
   --relation-map datasets/yago37/relationid.txt \
   --train datasets/yago37/train.txt \
   --known-positive datasets/yago37/valid.txt datasets/yago37/test.txt \
-  --relation "<hasChild>" \
   --output datasets/yago37/inverse_exclusion_groundings.txt \
   --min-support 20 --min-confidence 0.8
 ```
 
+Sans `--relation`, toutes les relations retenues par les seuils sont générées.
 Répéter `--relation "<nom>"` pour limiter les groundings à plusieurs relations.
-Sans cette option, toutes les relations retenues par les seuils sont générées.
 
 Le fichier généré peut être fourni au trainer avec `--negative-rule`, en plus
 des règles positives passées à `-rule`. Il faut d'abord examiner le rapport et
