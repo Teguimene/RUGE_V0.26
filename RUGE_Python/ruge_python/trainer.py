@@ -56,6 +56,19 @@ class RUGETrainer:
             raise ValueError("Invalid validation, regularization, or rule setting")
         if num_negatives % 2:
             raise ValueError("num_negatives must be even, as in the Java trainer")
+        negative_rules = [rule for rule in rules if rule.polarity == "negative"]
+        if any(rule.unseen != len(rule.triples) for rule in negative_rules):
+            raise ValueError(
+                "Negative rule targets must be the final triple in each grounding"
+            )
+        conflicting_targets = {
+            rule.target for rule in negative_rules if rule.target in known_triples
+        }
+        if conflicting_targets:
+            raise ValueError(
+                f"Negative rule groundings contain {len(conflicting_targets)} "
+                "target(s) already known positive"
+            )
 
         self.model = model
         self.training = training.cpu()
@@ -80,24 +93,32 @@ class RUGETrainer:
             gamma_relation if name.startswith("relation") else gamma_entity
             for name, _ in model.named_parameters()
         ]
-        self.rule_triples, self.rule_targets, self.rule_unseen, self.rule_confidence = (
-            self._encode_rules(rules)
-        )
+        (
+            self.rule_triples,
+            self.rule_targets,
+            self.rule_unseen,
+            self.rule_confidence,
+            self.rule_negative,
+        ) = self._encode_rules(rules)
 
     @staticmethod
     def _encode_rules(
         rules: list[GroundRule],
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor
+    ]:
         triples = torch.zeros((len(rules), 4, 3), dtype=torch.long)
         targets = torch.zeros((len(rules), 3), dtype=torch.long)
         unseen = torch.empty(len(rules), dtype=torch.long)
         confidence = torch.empty(len(rules), dtype=torch.float64)
+        negative = torch.empty(len(rules), dtype=torch.bool)
         for index, rule in enumerate(rules):
             triples[index, : len(rule.triples)] = torch.tensor(rule.triples)
             targets[index] = torch.tensor(rule.target)
             unseen[index] = rule.unseen
             confidence[index] = rule.confidence
-        return triples, targets, unseen, confidence
+            negative[index] = rule.polarity == "negative"
+        return triples, targets, unseen, confidence, negative
 
     def _sample_replacements(
         self, original_ids: torch.Tensor, count: int
@@ -187,6 +208,7 @@ class RUGETrainer:
         triples = self.rule_triples[selected].to(device)
         targets = self.rule_targets[selected].to(device)
         unseen = self.rule_unseen[selected].to(device)
+        negative = self.rule_negative[selected].to(device)
         confidence = self.rule_confidence[selected].to(
             device=device, dtype=self.model.dtype
         )
@@ -200,24 +222,25 @@ class RUGETrainer:
                 dim=1,
             )
             posterior = torch.zeros_like(confidence)
-            mask = unseen == 1
+            positive = ~negative
+            mask = positive & (unseen == 1)
             posterior[mask] = (
                 self.rule_weight
                 * confidence[mask]
                 * (probabilities[mask, 1] - 1.0)
             )
-            mask = unseen == 2
+            mask = positive & (unseen == 2)
             posterior[mask] = (
                 self.rule_weight * confidence[mask] * probabilities[mask, 0]
             )
-            mask = unseen == 3
+            mask = positive & (unseen == 3)
             posterior[mask] = (
                 self.rule_weight
                 * confidence[mask]
                 * probabilities[mask, 0]
                 * probabilities[mask, 1]
             )
-            mask = unseen == 4
+            mask = positive & (unseen == 4)
             posterior[mask] = (
                 self.rule_weight
                 * confidence[mask]
@@ -225,6 +248,16 @@ class RUGETrainer:
                 * probabilities[mask, 1]
                 * probabilities[mask, 2]
             )
+            for unseen_position in (2, 3, 4):
+                mask = negative & (unseen == unseen_position)
+                if not mask.any():
+                    continue
+                body_probability = probabilities[mask, : unseen_position - 1].prod(
+                    dim=1
+                )
+                posterior[mask] = (
+                    -self.rule_weight * confidence[mask] * body_probability
+                )
 
             unique_targets, inverse = torch.unique(
                 targets, dim=0, return_inverse=True

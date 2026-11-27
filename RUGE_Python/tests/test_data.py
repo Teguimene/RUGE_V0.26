@@ -29,7 +29,24 @@ class DataLoadingTests(unittest.TestCase):
             self.assertEqual(len(rules), 2)
             self.assertEqual(rules[0].target, (2, 0, 1))
             self.assertAlmostEqual(rules[0].confidence, 0.8)
+            self.assertEqual(rules[0].polarity, "positive")
             self.assertEqual(rules[1].target, (1, 1, 0))
+
+    def test_loads_explicit_positive_and_negative_polarities(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "groundings.txt"
+            path.write_text(
+                "2\tpositive\t(0\t1\t2)\t(2\t0\t1)\t0.8\n"
+                "2\tnegative\t(0\t1\t2)\t(2\t0\t1)\t0.9\n",
+                encoding="utf-8",
+            )
+
+            rules = load_groundings(path, num_entities=3, num_relations=2)
+
+            self.assertEqual(
+                [rule.polarity for rule in rules], ["positive", "negative"]
+            )
+            self.assertEqual(rules[1].target, (2, 0, 1))
 
 
 if __name__ == "__main__":

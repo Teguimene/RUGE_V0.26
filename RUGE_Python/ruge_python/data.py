@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import torch
+
+
+RulePolarity = Literal["positive", "negative"]
 
 
 @dataclass(frozen=True)
@@ -9,6 +13,7 @@ class GroundRule:
     triples: tuple[tuple[int, int, int], ...]
     unseen: int
     confidence: float
+    polarity: RulePolarity = "positive"
 
     @property
     def target(self) -> tuple[int, int, int]:
@@ -36,6 +41,11 @@ def load_triples(path: str | Path, num_entities: int, num_relations: int) -> tor
 def load_groundings(
     path: str | Path, num_entities: int, num_relations: int
 ) -> list[GroundRule]:
+    """Load legacy positive groundings or explicitly signed groundings.
+
+    Signed rows place ``positive`` or ``negative`` after the unseen position.
+    Legacy rows omit that marker and are interpreted as positive.
+    """
     rules = []
     with Path(path).open("r", encoding="utf-8") as source:
         for line_number, line in enumerate(source, start=1):
@@ -44,7 +54,13 @@ def load_groundings(
                 continue
             unseen = int(fields[0])
             confidence = float(fields[-1])
-            values = list(map(int, fields[1:-1]))
+            if len(fields) > 1 and fields[1] in ("positive", "negative"):
+                polarity: RulePolarity = fields[1]
+                value_fields = fields[2:-1]
+            else:
+                polarity = "positive"
+                value_fields = fields[1:-1]
+            values = list(map(int, value_fields))
             if len(values) % 3:
                 raise ValueError(f"{path}:{line_number}: malformed grounding")
             triples = tuple(
@@ -64,5 +80,5 @@ def load_groundings(
                     raise ValueError(f"{path}:{line_number}: entity ID out of range")
                 if not 0 <= relation < num_relations:
                     raise ValueError(f"{path}:{line_number}: relation ID out of range")
-            rules.append(GroundRule(triples, unseen, confidence))
+            rules.append(GroundRule(triples, unseen, confidence, polarity))
     return rules

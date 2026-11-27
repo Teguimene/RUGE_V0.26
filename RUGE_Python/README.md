@@ -94,3 +94,48 @@ python -m ruge_python.preprocess ground \
 Sans fichiers de mapping existants, la conversion crée des IDs déterministes
 triés. Cette situation ne reproduit pas l'ordre non spécifié des `HashMap`
 Java; les mappings existants sont donc à conserver pour des comparaisons.
+
+Les groundings historiques, sans marqueur de polarité, sont lus comme positifs.
+Le chargeur accepte aussi des lignes où `positive` ou `negative` suit l'index
+`unseen`, par exemple `2 negative (0 1 2) (2 0 1) 0.9`. À cette étape, le
+trainer réduit la probabilité courante d'une cible négative finale de
+`rule_weight × confidence × probabilité(prémisses)`, puis borne le résultat
+entre 0 et 1. Une cible déjà connue positive dans train, validation ou test
+provoque une erreur au lieu d'être entraînée avec une étiquette contradictoire.
+Après audit des groundings, ajoute `--negative-rule
+datasets/yago37/inverse_exclusion_groundings.txt` à la commande d'entraînement
+pour les charger en plus du fichier donné par `-rule`.
+
+Pour auditer les candidats de règle inverse `r(x,y) ⇒ ¬r(y,x)` à partir du
+train, sans les appliquer à l'entraînement :
+
+```bash
+python -m ruge_python.preprocess mine-inverse \
+  --relation-map datasets/yago37/relationid.txt \
+  --train datasets/yago37/train.txt \
+  --output datasets/yago37/inverse_exclusion_report.tsv \
+  --min-support 20 --min-confidence 0.8
+```
+
+Le rapport contient toutes les relations et indique celles qui passent les
+seuils. La confiance lissée utilise `((support - violations) + 1) /
+(support + 2)`. Elle mesure la cohérence observée dans le train, pas la
+probabilité que les triplets absents soient réellement faux.
+
+Après vérification manuelle des candidats, les groundings négatifs peuvent être
+écrits séparément pour inspection. Les positifs connus fournis sont exclus des
+cibles négatives; la confiance, elle, est toujours calculée uniquement sur le
+train :
+
+```bash
+python -m ruge_python.preprocess ground-inverse \
+  --relation-map datasets/yago37/relationid.txt \
+  --train datasets/yago37/train.txt \
+  --known-positive datasets/yago37/valid.txt datasets/yago37/test.txt \
+  --output datasets/yago37/inverse_exclusion_groundings.txt \
+  --min-support 20 --min-confidence 0.8
+```
+
+Le fichier généré peut être fourni au trainer avec `--negative-rule`, en plus
+des règles positives passées à `-rule`. Il faut d'abord examiner le rapport et
+les groundings générés.

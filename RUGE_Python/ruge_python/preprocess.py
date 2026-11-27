@@ -1,4 +1,5 @@
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -34,6 +35,143 @@ def _write_id_map(path: Path, mapping: dict[str, int]) -> None:
     with path.open("w", encoding="utf-8", newline="\n") as output:
         for index, term in inverse:
             output.write(f"{index}\t{term}\n")
+
+
+@dataclass(frozen=True)
+class InverseExclusionStats:
+    relation_id: int
+    relation: str
+    support: int
+    violations: int
+    confidence_raw: float | None
+    confidence_smoothed: float
+    retained: bool
+
+
+def _read_numeric_triples(path: str | Path):
+    with Path(path).open("r", encoding="utf-8") as source:
+        for line_number, line in enumerate(source, start=1):
+            fields = line.split()
+            if len(fields) != 3:
+                raise ValueError(f"{path}:{line_number}: malformed triple")
+            try:
+                yield tuple(map(int, fields))
+            except ValueError as error:
+                raise ValueError(
+                    f"{path}:{line_number}: expected numeric triple IDs"
+                ) from error
+
+
+def analyze_inverse_exclusions(
+    relation_map_path: str | Path,
+    training_path: str | Path,
+    *,
+    min_support: int = 20,
+    min_confidence: float = 0.8,
+) -> list[InverseExclusionStats]:
+    """Score candidates of the form ``r(x,y) => not r(y,x)`` on training data."""
+    if min_support < 1:
+        raise ValueError("min_support must be at least one")
+    if not 0.0 <= min_confidence <= 1.0:
+        raise ValueError("min_confidence must be between zero and one")
+
+    relation_ids = _read_id_map(Path(relation_map_path))
+    relations_by_id = {index: name for name, index in relation_ids.items()}
+    facts_by_relation: dict[int, set[tuple[int, int]]] = {
+        relation_id: set() for relation_id in relations_by_id
+    }
+    for head, relation_id, tail in _read_numeric_triples(training_path):
+        if relation_id not in facts_by_relation:
+            raise ValueError(
+                f"{training_path}: relation ID {relation_id} "
+                "is absent from the relation map"
+            )
+        facts_by_relation[relation_id].add((head, tail))
+
+    results = []
+    for relation_id, relation in sorted(relations_by_id.items()):
+        facts = facts_by_relation[relation_id]
+        support = len(facts)
+        violations = sum(
+            (tail, head) in facts for head, tail in facts
+        )
+        confidence_raw = (
+            (support - violations) / support if support else None
+        )
+        confidence_smoothed = (support - violations + 1) / (support + 2)
+        retained = (
+            support >= min_support and confidence_smoothed >= min_confidence
+        )
+        results.append(
+            InverseExclusionStats(
+                relation_id=relation_id,
+                relation=relation,
+                support=support,
+                violations=violations,
+                confidence_raw=confidence_raw,
+                confidence_smoothed=confidence_smoothed,
+                retained=retained,
+            )
+        )
+    return results
+
+
+def ground_inverse_exclusions(
+    relation_map_path: str | Path,
+    training_path: str | Path,
+    output_path: str | Path,
+    *,
+    known_positive_paths: tuple[str | Path, ...] = (),
+    min_support: int = 20,
+    min_confidence: float = 0.8,
+) -> tuple[int, int]:
+    """Write candidate negative groundings for retained inverse rules."""
+    retained_confidences = {
+        result.relation_id: result.confidence_smoothed
+        for result in analyze_inverse_exclusions(
+            relation_map_path,
+            training_path,
+            min_support=min_support,
+            min_confidence=min_confidence,
+        )
+        if result.retained
+    }
+
+    input_paths = (relation_map_path, training_path, *known_positive_paths)
+    output_file = Path(output_path)
+    if any(output_file.resolve() == Path(path).resolve() for path in input_paths):
+        raise ValueError("output_path must not overwrite an input file")
+
+    known_positive = set()
+    for path in (training_path, *known_positive_paths):
+        known_positive.update(_read_numeric_triples(path))
+
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    generated = set()
+    generated_count = 0
+    skipped_known_positive_count = 0
+    with output_file.open("w", encoding="utf-8", newline="\n") as output:
+        for head, relation, tail in _read_numeric_triples(training_path):
+            confidence = retained_confidences.get(relation)
+            if confidence is None:
+                continue
+            premise = (head, relation, tail)
+            target = (tail, relation, head)
+            grounding = (premise, target)
+            if grounding in generated:
+                continue
+            generated.add(grounding)
+            if target in known_positive:
+                skipped_known_positive_count += 1
+                continue
+
+            output.write(
+                f"2\tnegative\t({head}\t{relation}\t{tail})\t"
+                f"({tail}\t{relation}\t{head})\t{confidence:.6f}\n"
+            )
+            generated_count += 1
+
+    return generated_count, skipped_known_positive_count
 
 
 def convert_data_form(
@@ -254,6 +392,25 @@ def main(argv: list[str] | None = None) -> int:
     ground.add_argument("--train", required=True)
     ground.add_argument("--output", required=True)
 
+    inverse = commands.add_parser(
+        "mine-inverse", help="Report inverse-exclusion rule candidates"
+    )
+    inverse.add_argument("--relation-map", required=True)
+    inverse.add_argument("--train", required=True)
+    inverse.add_argument("--output", required=True)
+    inverse.add_argument("--min-support", type=int, default=20)
+    inverse.add_argument("--min-confidence", type=float, default=0.8)
+
+    ground_inverse = commands.add_parser(
+        "ground-inverse", help="Write candidate inverse-exclusion groundings"
+    )
+    ground_inverse.add_argument("--relation-map", required=True)
+    ground_inverse.add_argument("--train", required=True)
+    ground_inverse.add_argument("--known-positive", nargs="*", default=[])
+    ground_inverse.add_argument("--output", required=True)
+    ground_inverse.add_argument("--min-support", type=int, default=20)
+    ground_inverse.add_argument("--min-confidence", type=float, default=0.8)
+
     args = parser.parse_args(argv)
     if args.command == "convert":
         entities, relations = convert_data_form(
@@ -267,11 +424,55 @@ def main(argv: list[str] | None = None) -> int:
             args.test_out,
         )
         print(f"Converted data: {entities} entities, {relations} relations")
-    else:
+    elif args.command == "ground":
         generated, skipped = ground_all_rules(
             args.relation_map, args.rules, args.train, args.output
         )
         print(f"Generated {generated} grounding(s); skipped {skipped} rule(s)")
+    elif args.command == "mine-inverse":
+        results = analyze_inverse_exclusions(
+            args.relation_map,
+            args.train,
+            min_support=args.min_support,
+            min_confidence=args.min_confidence,
+        )
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w", encoding="utf-8", newline="\n") as output:
+            output.write(
+                "relation_id\trelation\tsupport\tviolations\tconfidence_raw\t"
+                "confidence_smoothed\tretained\n"
+            )
+            for result in results:
+                raw_confidence = (
+                    ""
+                    if result.confidence_raw is None
+                    else f"{result.confidence_raw:.6f}"
+                )
+                output.write(
+                    f"{result.relation_id}\t{result.relation}\t{result.support}\t"
+                    f"{result.violations}\t{raw_confidence}\t"
+                    f"{result.confidence_smoothed:.6f}\t"
+                    f"{str(result.retained).lower()}\n"
+                )
+        retained = sum(result.retained for result in results)
+        print(
+            f"Retained {retained} of {len(results)} candidates; "
+            f"report written to {output_path}"
+        )
+    else:
+        generated, skipped = ground_inverse_exclusions(
+            args.relation_map,
+            args.train,
+            args.output,
+            known_positive_paths=tuple(args.known_positive),
+            min_support=args.min_support,
+            min_confidence=args.min_confidence,
+        )
+        print(
+            f"Generated {generated} candidate grounding(s); "
+            f"skipped {skipped} target(s) already known positive"
+        )
     return 0
 
 

@@ -17,6 +17,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-valid", required=True, help="Numeric validation triples")
     parser.add_argument("-test", required=True, help="Numeric test triples")
     parser.add_argument("-rule", required=True, help="Grounded soft rules")
+    parser.add_argument(
+        "--negative-rule",
+        type=Path,
+        help="Signed negative-rule groundings, such as inverse exclusions",
+    )
     parser.add_argument("-m", type=int, required=True, help="Number of relations")
     parser.add_argument("-n", type=int, required=True, help="Number of entities")
     parser.add_argument("-k", type=int, help="Embedding dimension")
@@ -85,6 +90,8 @@ def main(argv: list[str] | None = None) -> int:
     validation = load_triples(args.valid, args.n, args.m)
     testing = load_triples(args.test, args.n, args.m)
     rules = load_groundings(args.rule, args.n, args.m)
+    if args.negative_rule is not None:
+        rules.extend(load_groundings(args.negative_rule, args.n, args.m))
     known_triples = {
         tuple(row)
         for split in (training, validation, testing)
