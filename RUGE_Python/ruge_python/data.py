@@ -38,6 +38,23 @@ def load_triples(path: str | Path, num_entities: int, num_relations: int) -> tor
     return torch.tensor(rows, dtype=torch.long)
 
 
+def read_id_map(path: str | Path) -> dict[str, int]:
+    mapping = {}
+    with Path(path).open("r", encoding="utf-8") as source:
+        for line_number, line in enumerate(source, start=1):
+            fields = line.rstrip("\r\n").split("\t", 1)
+            if len(fields) != 2:
+                raise ValueError(f"{path}:{line_number}: malformed ID mapping")
+            index = int(fields[0])
+            term = fields[1]
+            if term in mapping:
+                raise ValueError(f"{path}:{line_number}: duplicate term {term!r}")
+            mapping[term] = index
+    if sorted(mapping.values()) != list(range(len(mapping))):
+        raise ValueError(f"{path}: IDs must be contiguous and start at zero")
+    return mapping
+
+
 def load_groundings(
     path: str | Path, num_entities: int, num_relations: int
 ) -> list[GroundRule]:

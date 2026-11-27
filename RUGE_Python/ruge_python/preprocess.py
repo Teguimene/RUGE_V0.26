@@ -2,6 +2,8 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
+from .data import read_id_map
+
 
 def _read_raw_triples(path: str | Path):
     with Path(path).open("r", encoding="utf-8") as source:
@@ -10,23 +12,6 @@ def _read_raw_triples(path: str | Path):
             if len(fields) != 3:
                 raise ValueError(f"{path}:{line_number}: expected 3 tab-separated fields")
             yield tuple(field.strip() for field in fields)
-
-
-def _read_id_map(path: Path) -> dict[str, int]:
-    mapping = {}
-    with path.open("r", encoding="utf-8") as source:
-        for line_number, line in enumerate(source, start=1):
-            fields = line.rstrip("\r\n").split("\t", 1)
-            if len(fields) != 2:
-                raise ValueError(f"{path}:{line_number}: malformed ID mapping")
-            index = int(fields[0])
-            term = fields[1]
-            if term in mapping:
-                raise ValueError(f"{path}:{line_number}: duplicate term {term!r}")
-            mapping[term] = index
-    if sorted(mapping.values()) != list(range(len(mapping))):
-        raise ValueError(f"{path}: IDs must be contiguous and start at zero")
-    return mapping
 
 
 def _write_id_map(path: Path, mapping: dict[str, int]) -> None:
@@ -75,7 +60,7 @@ def analyze_inverse_exclusions(
     if not 0.0 <= min_confidence <= 1.0:
         raise ValueError("min_confidence must be between zero and one")
 
-    relation_ids = _read_id_map(Path(relation_map_path))
+    relation_ids = read_id_map(relation_map_path)
     relations_by_id = {index: name for name, index in relation_ids.items()}
     facts_by_relation: dict[int, set[tuple[int, int]]] = {
         relation_id: set() for relation_id in relations_by_id
@@ -135,7 +120,7 @@ def ground_inverse_exclusions(
     )
     selected_relation_ids = None
     if relation_names is not None:
-        relation_ids = _read_id_map(Path(relation_map_path))
+        relation_ids = read_id_map(relation_map_path)
         unknown_relations = set(relation_names) - relation_ids.keys()
         if unknown_relations:
             raise ValueError(
@@ -218,8 +203,8 @@ def convert_data_form(
     raw_paths = [Path(raw_train_path), Path(raw_valid_path), Path(raw_test_path)]
 
     if entity_map_file.is_file() and relation_map_file.is_file():
-        entity_ids = _read_id_map(entity_map_file)
-        relation_ids = _read_id_map(relation_map_file)
+        entity_ids = read_id_map(entity_map_file)
+        relation_ids = read_id_map(relation_map_file)
     else:
         entities = set()
         relations = set()
@@ -281,7 +266,7 @@ def ground_all_rules(
     output_path: str | Path,
 ) -> tuple[int, int]:
     """Ground one- and two-atom rule bodies in the Java RUGE text format."""
-    relation_ids = _read_id_map(Path(relation_map_path))
+    relation_ids = read_id_map(relation_map_path)
     facts_by_relation: dict[int, list[tuple[int, int, int]]] = {}
     facts_by_relation_head: dict[tuple[int, int], list[tuple[int, int, int]]] = {}
     facts_by_relation_tail: dict[tuple[int, int], list[tuple[int, int, int]]] = {}

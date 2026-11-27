@@ -71,6 +71,27 @@ python -m ruge_python.evaluate --model rotate \
 Pour lire les fichiers texte compatibles avec Java, remplace `--checkpoint`
 par `--matrix-dir .` et précise `-gamma 12` pour RotatE.
 
+## Produire des prédictions top-K
+
+Pour compléter un sujet et une relation avec les objets les mieux classés :
+
+```bash
+python -m ruge_python.predict \
+  --checkpoint ruge_python_best.pt \
+  --entity-map datasets/yago37/entityid.txt \
+  --relation-map datasets/yago37/relationid.txt \
+  --train datasets/yago37/train.txt \
+  --subject "<Ibrahim_Sekagya>" \
+  --relation "<playsFor>" \
+  --top-k 10
+```
+
+Pour compléter une relation et un objet avec les sujets les mieux classés,
+remplace `--subject` par `--object "<nom-de-l-entite>"`. Les faits déjà présents
+dans le train sont filtrés. Les scores servent à classer les candidats; ce ne
+sont pas des probabilités. Les triplets retournés pourront ensuite être fournis
+à l'étape d'explication par règles.
+
 ## Prétraitement
 
 Les commandes Python `convert` et `ground` remplacent les deux utilitaires Java.
