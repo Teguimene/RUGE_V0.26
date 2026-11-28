@@ -92,6 +92,11 @@ dans le train sont filtrés. Les scores servent à classer les candidats; ce ne
 sont pas des probabilités. Les triplets retournés pourront ensuite être fournis
 à l'étape d'explication par règles.
 
+Ajoute `--candidate "<nom-de-l-entite>"` pour afficher aussi le rang filtré
+et le score d'un candidat précis, même s'il n'est pas dans le top-K. Cela permet
+de comparer le même triplet avec deux checkpoints, par exemple avec et sans
+groundings de règles négatives.
+
 ## Prétraitement
 
 Les commandes Python `convert` et `ground` remplacent les deux utilitaires Java.

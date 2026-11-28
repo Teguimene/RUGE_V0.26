@@ -59,6 +59,27 @@ def rank_candidates(
     return [(int(index), float(value)) for index, value in zip(indices, values)]
 
 
+def rank_candidate(
+    scores: torch.Tensor,
+    candidate_id: int,
+    blocked_ids: set[int],
+) -> tuple[int, float]:
+    if scores.ndim != 1:
+        raise ValueError("scores must be a one-dimensional tensor")
+    if not 0 <= candidate_id < scores.shape[0]:
+        raise ValueError("candidate_id is out of range")
+    if candidate_id in blocked_ids:
+        raise ValueError("candidate is already a known training fact")
+
+    candidate_score = scores[candidate_id]
+    filtered_scores = scores.detach().cpu().clone()
+    if blocked_ids:
+        blocked = torch.tensor(sorted(blocked_ids), dtype=torch.long)
+        filtered_scores[blocked] = -torch.inf
+    rank = 1 + int((filtered_scores > candidate_score.cpu()).sum().item())
+    return rank, float(candidate_score.item())
+
+
 def _score_candidates(
     model: RUGEEmbeddingModel,
     relation_id: int,
@@ -112,6 +133,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Known object; rank candidate subjects for this relation and object",
     )
     parser.add_argument("--relation", required=True)
+    parser.add_argument(
+        "--candidate",
+        help="Also report the filtered rank and score of this candidate entity",
+    )
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     return parser
@@ -143,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("Relation map size does not match the checkpoint")
     if args.relation not in relation_ids:
         raise ValueError(f"Unknown relation: {args.relation}")
+    if args.candidate is not None and args.candidate not in entity_ids:
+        raise ValueError(f"Unknown candidate: {args.candidate}")
 
     training = load_triples(
         args.train,
@@ -177,6 +204,24 @@ def main(argv: list[str] | None = None) -> int:
         fixed_id,
         predict_subject=args.object is not None,
     )
+    if args.candidate is not None:
+        candidate_id = entity_ids[args.candidate]
+        candidate_rank, candidate_score = rank_candidate(
+            scores, candidate_id, blocked_ids
+        )
+        if args.subject is not None:
+            candidate_triple = (
+                f"{args.subject}\t{args.relation}\t{args.candidate}"
+            )
+        else:
+            candidate_triple = (
+                f"{args.candidate}\t{args.relation}\t{args.object}"
+            )
+        print(
+            f"Candidate rank={candidate_rank}, score={candidate_score:.8f}\t"
+            f"{candidate_triple}"
+        )
+
     predictions = rank_candidates(scores, blocked_ids, args.top_k)
     if not predictions:
         print("No unseen candidates remain after filtering training facts.")

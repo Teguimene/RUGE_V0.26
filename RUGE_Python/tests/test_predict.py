@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from ruge_python.predict import rank_candidates
+from ruge_python.predict import rank_candidate, rank_candidates
 
 
 class PredictionTests(unittest.TestCase):
@@ -20,6 +20,16 @@ class PredictionTests(unittest.TestCase):
     def test_rejects_nonpositive_top_k(self):
         with self.assertRaisesRegex(ValueError, "top_k must be positive"):
             rank_candidates(torch.tensor([0.2]), set(), 0)
+
+    def test_ranks_a_specific_candidate_after_filtering_known_answers(self):
+        rank, score = rank_candidate(
+            torch.tensor([0.2, 0.9, 0.7, 0.4]),
+            candidate_id=2,
+            blocked_ids={1},
+        )
+
+        self.assertEqual(rank, 1)
+        self.assertAlmostEqual(score, 0.7)
 
 
 if __name__ == "__main__":
